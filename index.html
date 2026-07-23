@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Order Room — Live Beer Game</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
+
+  :root{
+    --bg:#fbf4e4; --surface:#ffffff; --surface2:#fff2cf; --border:#ecdcae;
+    --text:#332c1f; --muted:#8a7f68;
+    --accent:#ffb703; --accent2:#1fab6f; --accent3:#ff6b4a; --accent4:#4361ee;
+    --retailer:#d99a00; --wholesaler:#1fab6f; --distributor:#3f5fe0; --factory:#e2572f;
+    --danger:#e5484d; --ok:#1fab6f;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:'DM Sans',sans-serif; color:var(--text);
+    background-color:var(--bg);
+    background-image:radial-gradient(circle at 1px 1px, rgba(51,44,31,.08) 1.5px, transparent 0);
+    background-size:24px 24px;
+    min-height:100vh; font-size:15px; -webkit-font-smoothing:antialiased;
+  }
+  #app{min-height:100vh; display:flex; flex-direction:column;}
+  .mono{font-family:'Space Mono',monospace;}
+  a, button{font-family:inherit;}
+  input, select{font-family:inherit; font-size:15px;}
+
+  /* ── layout shells ── */
+  .center-shell{flex:1; display:flex; align-items:center; justify-content:center; padding:32px 18px;}
+  .wide-shell{flex:1; padding:24px 18px 60px; max-width:1180px; margin:0 auto; width:100%;}
+  .col{max-width:480px; width:100%;}
+
+  /* ── top bar ── */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 22px; border-bottom:2px solid var(--border); background:var(--surface);
+  }
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand .mark{
+    width:30px; height:30px; border-radius:50%; background:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; color:#332c1f;
+    box-shadow:0 2px 0 rgba(51,44,31,.15);
+  }
+  .brand-name{font-family:'Space Mono',monospace; font-weight:700; font-size:13px; letter-spacing:2px; color:var(--text); text-transform:uppercase;}
+  .code-pill{
+    font-family:'Space Mono',monospace; font-weight:700; font-size:14px; letter-spacing:3px; padding:6px 14px;
+    background:var(--surface2); border:2px dashed var(--accent); border-radius:20px; color:#a97400;
+  }
+
+  /* ── typography ── */
+  h1{font-family:'Space Mono',monospace; font-weight:700; font-size:clamp(24px,4vw,36px); line-height:1.15; margin-bottom:10px;}
+  h2{font-family:'Space Mono',monospace; font-weight:700; font-size:20px; margin-bottom:6px;}
+  h3{font-family:'Space Mono',monospace; font-weight:700; font-size:15px; letter-spacing:1px; text-transform:uppercase; color:var(--muted);}
+  p{color:var(--muted); line-height:1.55;}
+  .eyebrow{font-family:'Space Mono',monospace; font-weight:700; font-size:11px; letter-spacing:3px; text-transform:uppercase; color:#a97400; margin-bottom:14px;}
+
+  .chain-strip{display:flex; align-items:center; flex-wrap:wrap; gap:6px;}
+  .chain-node{
+    font-family:'Space Mono',monospace; font-weight:700; font-size:12px; letter-spacing:1px; text-transform:uppercase;
+    padding:8px 14px; border-radius:999px; background:var(--surface); border:2px solid var(--role-color, var(--border));
+    color:var(--role-color, var(--text));
+  }
+  .chain-node.customer{ color:var(--muted); border-color:var(--border); background:var(--surface2); }
+  .chain-arrow{color:var(--muted); font-weight:700; font-size:14px;}
+
+  /* ── buttons ── */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    padding:13px 24px; border-radius:999px; border:2px solid var(--border); background:var(--surface2);
+    color:var(--text); font-weight:700; font-size:15px; cursor:pointer; transition:all .12s ease;
+  }
+  .btn:hover{border-color:var(--accent); transform:translateY(-2px); box-shadow:0 4px 0 rgba(51,44,31,.1);}
+  .btn:active{transform:translateY(0); box-shadow:none;}
+  .btn-primary{background:var(--accent); color:#332c1f; border-color:var(--accent); box-shadow:0 3px 0 #c68e00;}
+  .btn-primary:hover{background:#ffc633; box-shadow:0 5px 0 #c68e00;}
+  .btn-primary:active{box-shadow:0 1px 0 #c68e00;}
+  .btn-block{width:100%;}
+  .btn-ghost{background:transparent;}
+  .btn-danger{border-color:var(--danger); color:var(--danger); background:#fff0f0;}
+  .btn-danger:hover{background:#ffe2e3;}
+  .btn:disabled{opacity:.45; cursor:not-allowed; transform:none; box-shadow:none;}
+  .btn-row{display:flex; gap:10px; flex-wrap:wrap;}
+
+  /* ── forms ── */
+  label{display:block; font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin-bottom:6px; font-family:'Space Mono',monospace;}
+  input[type=text], input[type=number], select{
+    width:100%; padding:12px 14px; background:var(--surface2); border:2px solid var(--border);
+    border-radius:10px; color:var(--text); margin-bottom:16px;
+  }
+  input:focus, select:focus{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
+  .field-row{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  details{margin-bottom:16px;}
+  details summary{cursor:pointer; color:var(--accent4); font-size:13px; font-family:'Space Mono',monospace; letter-spacing:1px; margin-bottom:12px;}
+  .hint{font-size:12px; color:var(--muted); margin-top:-10px; margin-bottom:16px;}
+
+  /* ── cards / order slips ── */
+  .card{
+    background:var(--surface); border:2px solid var(--border); border-radius:18px; padding:24px;
+    box-shadow:0 3px 0 rgba(51,44,31,.06);
+  }
+  .slip{
+    background:var(--surface); border:2px dashed var(--role-color,var(--accent)); border-radius:14px; padding:22px 22px 20px;
+    position:relative; overflow:hidden;
+    box-shadow:0 4px 14px rgba(51,44,31,.08);
+  }
+  .slip::before{
+    content:""; position:absolute; top:0; left:0; right:0; height:6px;
+    background:repeating-linear-gradient(90deg, var(--role-color,var(--accent)) 0 10px, transparent 10px 20px);
+    opacity:.85;
+  }
+  .role-tag{
+    display:inline-flex; align-items:center; gap:8px; font-family:'Space Mono',monospace; font-weight:700; font-size:12px;
+    letter-spacing:2px; text-transform:uppercase; color:var(--role-color,var(--accent));
+  }
+  .role-dot{width:9px; height:9px; border-radius:50%; background:var(--role-color,var(--accent));}
+
+  .stamp{
+    display:inline-block; font-family:'Space Mono',monospace; font-weight:700; font-size:11px;
+    letter-spacing:2px; padding:5px 12px; border-radius:20px; border:2px solid var(--muted);
+    color:var(--muted); transform:rotate(-4deg); text-transform:uppercase;
+  }
+  .stamp.ok{border-color:var(--ok); color:var(--ok);}
+  .stamp.warn{border-color:var(--accent3); color:var(--accent3);}
+  .stamp.wait{border-color:var(--muted); color:var(--muted);}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:18px 0;}
+  .stat{background:var(--surface2); border:2px solid var(--border); border-radius:12px; padding:12px; text-align:center;}
+  .stat .num{font-family:'Space Mono',monospace; font-size:22px; font-weight:700;}
+  .stat .lbl{font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin-top:4px;}
+
+  .grid-chains{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px;}
+  .role-slot{
+    display:flex; align-items:center; justify-content:space-between; padding:10px 12px; gap:8px;
+    border:2px solid var(--border); border-radius:10px; margin-bottom:8px; background:var(--surface2);
+  }
+  .role-slot .name{font-size:13px; color:var(--muted); display:inline-flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end;}
+  .role-slot .name .name-text{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:0 1 auto;}
+  .role-slot .name .stamp{flex-shrink:0;}
+  .role-slot .role-tag{flex-shrink:0;}
+  .role-slot.filled .name{color:var(--text);}
+  .badge-round{
+    font-family:'Space Mono',monospace; font-weight:700; font-size:11px; padding:3px 9px; border-radius:12px;
+    background:var(--surface2); border:2px solid var(--border); color:var(--muted);
+  }
+
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(51,44,31,.5); display:flex; align-items:center;
+    justify-content:center; z-index:50; padding:20px;
+  }
+  .modal{background:var(--surface); border:2px solid var(--accent3); border-radius:18px; padding:26px; max-width:420px; box-shadow:0 8px 0 rgba(51,44,31,.08);}
+
+  .divider{height:2px; background:var(--border); margin:20px 0;}
+
+  .role-pick{
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;
+  }
+  .role-btn{
+    border:2px solid var(--border); background:var(--surface2); border-radius:12px; padding:14px;
+    cursor:pointer; text-align:left; transition:all .12s ease;
+  }
+  .role-btn:hover{border-color:var(--role-color); transform:translateY(-2px); box-shadow:0 4px 0 rgba(51,44,31,.08);}
+  .role-btn .rn{font-family:'Space Mono',monospace; font-weight:700; font-size:13px; color:var(--role-color);}
+  .role-btn .rt{font-size:12px; color:var(--muted); margin-top:3px;}
+
+  .footer-note{padding:16px 22px; text-align:center; color:var(--muted); font-size:12px; border-top:2px solid var(--border);}
+  canvas{max-width:100%;}
+
+  .err{color:var(--danger); font-size:13px; margin:-8px 0 14px;}
+  .link-btn{background:none; border:none; color:var(--accent4); cursor:pointer; font-size:13px; text-decoration:underline; padding:0;}
+
+  table.results{width:100%; border-collapse:collapse; margin-top:10px;}
+  table.results th, table.results td{padding:9px 10px; border-bottom:1px solid var(--border); font-size:13px; text-align:left;}
+  table.results th{font-family:'Space Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted);}
+  table.results td.mono-num{font-family:'Space Mono',monospace;}
+
+  .offline-pill{
+    position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:40;
+    background:var(--surface); border:2px solid var(--accent3); color:var(--accent3);
+    padding:8px 16px; border-radius:20px; font-family:'Space Mono',monospace; font-weight:700; font-size:12px;
+    letter-spacing:1px; box-shadow:0 4px 14px rgba(51,44,31,.15);
+  }
+
+  @media (max-width:520px){
+    .stat-grid{grid-template-columns:repeat(2,1fr);}
+    .field-row{grid-template-columns:1fr;}
+    .role-pick{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+import { OrderRoomData } from './order-room-data.js';
+import {
+  ROLES, ROLE_LABEL, ROLE_DESC, ROLE_UPSTREAM_LABEL, ROLE_COLOR
+} from './game-engine.js';
+
+/* ============================== APP STATE ============================== */
+const App = {
+  view:'home',
+  code:null, chainId:null, role:null, teamName:'',
+  session:null, chain:null, allChains:null,
+  error:'', pendingConfirm:null, confirmedUnusual:false,
+  unsub:null, busy:false, offline:false, connError:''
+};
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============================== ROUTING / HASH ============================== */
+function updateHash(){
+  if (App.view==='teamRoom' && App.code && App.chainId && App.role){
+    location.hash = 'team.'+App.code+'.'+App.chainId+'.'+App.role;
+  } else if (App.view==='instructorDashboard' && App.code){
+    location.hash = 'instr.'+App.code;
+  } else {
+    history.replaceState(null,'',location.pathname+location.search);
+  }
+}
+function tryRestoreFromHash(){
+  const h = location.hash.replace('#','');
+  if (!h) return false;
+  const parts = h.split('.');
+  if (parts[0]==='team' && parts.length===4){
+    App.code=parts[1]; App.chainId=parseInt(parts[2],10); App.role=parts[3]; App.view='teamRoom';
+    return true;
+  }
+  if (parts[0]==='instr' && parts.length===2){
+    App.code=parts[1]; App.view='instructorDashboard';
+    return true;
+  }
+  return false;
+}
+
+/* ============================== LISTENERS ============================== */
+// A single live-listener slot per view, replacing the original prototype's
+// setInterval polling. `startListen` accepts an (async) setup function that
+// attaches whatever onSnapshot listeners the view needs and returns one
+// combined unsubscribe function. The token guard means that if the user
+// navigates to a different view before an async setup finishes resolving
+// (e.g. the one-shot getSession lookup below), the stale listener is
+// unsubscribed immediately instead of clobbering the new view's state.
+let listenToken = 0;
+function stopListen(){
+  listenToken++;
+  if (App.unsub){ App.unsub(); App.unsub = null; }
+}
+function startListen(setupFn){
+  stopListen();
+  const myToken = listenToken;
+  Promise.resolve(setupFn()).then((unsub)=>{
+    if (myToken !== listenToken){ if (unsub) unsub(); return; }
+    App.unsub = unsub || null;
+  });
+}
+function handleConnError(err){
+  console.error('listener error', err);
+  App.connError = 'Lost connection to the game (' + (err && err.code ? err.code : 'unknown error') + '). Try reloading.';
+  render();
+}
+function onLiveUpdate(meta){
+  App.connError = '';
+  App.offline = !!(meta && meta.fromCache);
+}
+
+async function listenInstructorDashboard(){
+  const session = await OrderRoomData.getSession(App.code);
+  if (!session){ App.error='Game not found.'; render(); return null; }
+  App.session = session; App.error='';
+  const unsubs = [];
+  unsubs.push(OrderRoomData.listenToSession(App.code, (s, meta)=>{
+    onLiveUpdate(meta); if (s) App.session = s; render();
+  }, handleConnError));
+  unsubs.push(OrderRoomData.listenToAllChains(App.code, session.numChains, (chains, meta)=>{
+    onLiveUpdate(meta); App.allChains = chains; render();
+  }, handleConnError));
+  return () => unsubs.forEach(u=>u());
+}
+
+async function listenInstructorResults(){
+  const session = await OrderRoomData.getSession(App.code);
+  if (!session){ App.error='Game not found.'; render(); return null; }
+  App.session = session;
+  const unsubs = [];
+  unsubs.push(OrderRoomData.listenToSession(App.code, (s, meta)=>{
+    onLiveUpdate(meta); if (s) App.session = s; render(); scheduleCharts();
+  }, handleConnError));
+  unsubs.push(OrderRoomData.listenToAllChains(App.code, session.numChains, (chains, meta)=>{
+    onLiveUpdate(meta); App.allChains = chains; render(); scheduleCharts();
+  }, handleConnError));
+  return () => unsubs.forEach(u=>u());
+}
+let chartsScheduled = false;
+function scheduleCharts(){
+  if (chartsScheduled) return;
+  chartsScheduled = true;
+  requestAnimationFrame(()=>{ chartsScheduled=false; drawResultsCharts(App.allChains, App.session); });
+}
+
+async function listenTeamSelect(){
+  const session = await OrderRoomData.getSession(App.code);
+  if (!session){ App.error='Game not found.'; render(); return null; }
+  App.session = session;
+  return OrderRoomData.listenToAllChains(App.code, session.numChains, (chains, meta)=>{
+    onLiveUpdate(meta); App.allChains = chains; render();
+  }, handleConnError);
+}
+
+function listenTeamRoom(){
+  const unsubs = [];
+  unsubs.push(OrderRoomData.listenToSession(App.code, (s, meta)=>{
+    onLiveUpdate(meta);
+    if (!s){ App.error='This game session could not be found.'; render(); return; }
+    App.session = s; App.error=''; render();
+  }, handleConnError));
+  unsubs.push(OrderRoomData.listenToChain(App.code, App.chainId, (c, meta)=>{
+    onLiveUpdate(meta);
+    if (!c){ App.error='This chain could not be found.'; render(); return; }
+    App.chain = c; App.error=''; render();
+  }, handleConnError));
+  return () => unsubs.forEach(u=>u());
+}
+
+/* ============================== RENDER: HOME ============================== */
+function renderHome(){
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room</div></div>
+  </div>
+  <div class="center-shell">
+    <div class="col" style="max-width:640px;">
+      <div class="eyebrow">AEC 411 · Food Systems Supply Chains</div>
+      <h1>You're one link<br>in the chain.</h1>
+      <p style="margin-bottom:8px;">Every food product moves through a chain of independent decision-makers: a retailer, a wholesaler, a distributor, a factory. Nobody sees the whole picture — just the order in front of them.</p>
+      <p style="margin-bottom:20px;">You'll run one of those roles. Fill the order you're given, then decide how much to order from the level above you. Watch how a small, steady bump in customer demand turns into wild swings by the time it reaches the factory — that's the bullwhip effect, and it's a real force in food and agricultural supply chains.</p>
+
+      <div class="chain-strip">
+        <div class="chain-node customer">Customer</div>
+        <div class="chain-arrow">→</div>
+        <div class="chain-node" style="--role-color:${ROLE_COLOR.retailer}">Retailer</div>
+        <div class="chain-arrow">→</div>
+        <div class="chain-node" style="--role-color:${ROLE_COLOR.wholesaler}">Wholesaler</div>
+        <div class="chain-arrow">→</div>
+        <div class="chain-node" style="--role-color:${ROLE_COLOR.distributor}">Distributor</div>
+        <div class="chain-arrow">→</div>
+        <div class="chain-node" style="--role-color:${ROLE_COLOR.factory}">Factory</div>
+      </div>
+
+      <div class="btn-row" style="flex-direction:column; margin-top:24px;">
+        <button class="btn btn-primary btn-block" onclick="App.view='instructorSetup'; render();">I'm running the game (Instructor)</button>
+        <button class="btn btn-block" onclick="App.view='teamJoin'; render();">I'm on a team</button>
+      </div>
+    </div>
+  </div>
+  <div class="footer-note">Orders flow upstream, shipments flow downstream — and every role only sees its own piece of the chain.<br>AEC 411 · Food Systems Supply Chains — Tim Delbridge, Oregon State University</div>`;
+}
+
+/* ============================== RENDER: INSTRUCTOR SETUP ============================== */
+function renderInstructorSetup(){
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room</div></div>
+    <button class="link-btn" onclick="App.view='home'; render();">← back</button>
+  </div>
+  <div class="center-shell">
+    <div class="col" style="max-width:520px;">
+      <div class="eyebrow">New Session</div>
+      <h1 style="font-size:26px;">Set up the game</h1>
+      <p style="margin-bottom:22px;">Each breakout group runs its own independent 4-role supply chain. Everyone sees the same customer demand pattern, so groups can be compared at the end.</p>
+
+      <label>Number of supply chains (breakout groups)</label>
+      <input type="number" id="cfg-numChains" value="4" min="1" max="12">
+
+      <label>Number of rounds</label>
+      <input type="number" id="cfg-numRounds" value="16" min="6" max="40">
+
+      <label>Customer demand pattern</label>
+      <select id="cfg-demandPattern">
+        <option value="classic">Classic step (steady, then jumps and stays high — the original 1960s setup)</option>
+        <option value="spike">Spike &amp; drop (sudden surge, then a sharp dip)</option>
+        <option value="steady-random">Steady with noise (roughly flat, mildly random)</option>
+      </select>
+
+      <details>
+        <summary>▸ Advanced settings</summary>
+        <div class="field-row">
+          <div><label>Shipping delay (rounds)</label><input type="number" id="cfg-shipDelay" value="2" min="1" max="4"></div>
+          <div><label>Order delay (rounds)</label><input type="number" id="cfg-orderDelay" value="2" min="1" max="4"></div>
+        </div>
+        <div class="field-row">
+          <div><label>Starting inventory</label><input type="number" id="cfg-initialInventory" value="12" min="0" max="100"></div>
+          <div><label>Starting demand/order rate</label><input type="number" id="cfg-initialDemand" value="4" min="1" max="50"></div>
+        </div>
+        <div class="field-row">
+          <div><label>Holding cost / unit / round</label><input type="number" id="cfg-holdingCost" value="0.5" min="0" step="0.1"></div>
+          <div><label>Backlog cost / unit / round</label><input type="number" id="cfg-backlogCost" value="1" min="0" step="0.1"></div>
+        </div>
+      </details>
+
+      ${App.error ? `<div class="err">${esc(App.error)}</div>` : ''}
+      <button class="btn btn-primary btn-block" ${App.busy?'disabled':''} onclick="handleCreateSession()">Create game &amp; get a code</button>
+    </div>
+  </div>`;
+}
+async function handleCreateSession(){
+  App.busy = true; App.error=''; render();
+  const num = id => parseFloat(document.getElementById(id).value);
+  const cfg = {
+    numChains: Math.max(1, Math.round(num('cfg-numChains'))),
+    numRounds: Math.max(6, Math.round(num('cfg-numRounds'))),
+    demandPattern: document.getElementById('cfg-demandPattern').value,
+    shipDelay: Math.max(1, Math.round(num('cfg-shipDelay'))),
+    orderDelay: Math.max(1, Math.round(num('cfg-orderDelay'))),
+    initialInventory: Math.max(0, Math.round(num('cfg-initialInventory'))),
+    initialDemand: Math.max(1, Math.round(num('cfg-initialDemand'))),
+    holdingCost: Math.max(0, num('cfg-holdingCost')),
+    backlogCost: Math.max(0, num('cfg-backlogCost'))
+  };
+  try{
+    const session = await OrderRoomData.createSession(cfg);
+    App.code = session.code;
+    App.session = session;
+    App.view = 'instructorDashboard';
+  } catch(e){
+    console.error(e);
+    App.error = 'Could not create the game. Please try again.';
+  }
+  App.busy = false;
+  render();
+}
+
+/* ============================== RENDER: INSTRUCTOR DASHBOARD ============================== */
+function renderInstructorDashboard(){
+  const s = App.session;
+  if (!s) return `<div class="center-shell"><p>Loading…</p></div>`;
+  const chains = App.allChains || [];
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room — Instructor</div></div>
+    <div class="code-pill">${esc(App.code)}</div>
+  </div>
+  <div class="wide-shell">
+    <div class="card" style="margin-bottom:22px; display:flex; flex-wrap:wrap; gap:18px; align-items:center; justify-content:space-between;">
+      <div>
+        <h2 style="margin-bottom:4px;">Game code: <span style="color:var(--accent)">${esc(App.code)}</span></h2>
+        <p style="margin:0;">${s.numChains} chain${s.numChains>1?'s':''} · ${s.numRounds} rounds · ${esc(s.demandPattern)} demand · status: <strong style="color:var(--text)">${esc(s.status)}</strong></p>
+      </div>
+      <div class="btn-row">
+        ${s.status==='lobby' ? `<button class="btn btn-primary" ${App.busy?'disabled':''} onclick="handleStartGame()">Start game for everyone</button>` : ''}
+        ${s.status==='playing' ? `<button class="btn btn-danger" ${App.busy?'disabled':''} onclick="handleEndGame()">End game &amp; show results</button>` : ''}
+        ${s.status==='ended' ? `<button class="btn btn-primary" onclick="App.view='instructorResults'; render();">View results</button>` : ''}
+      </div>
+    </div>
+
+    <div class="grid-chains">
+      ${chains.map(c => renderChainSummaryCard(c, s)).join('')}
+    </div>
+  </div>
+  <div class="footer-note">Have teams go to this page, choose "I'm on a team," and enter <strong style="color:var(--accent)">${esc(App.code)}</strong>.</div>`;
+}
+function renderChainSummaryCard(c, s){
+  if (!c) return '';
+  const roundLabel = c.status==='finished' ? 'Finished' : `Round ${c.currentRound} / ${s.numRounds}`;
+  return `
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h3 style="color:var(--text);">Chain ${c.chainId}</h3>
+      <span class="badge-round">${roundLabel}</span>
+    </div>
+    ${ROLES.map(r=>{
+      const filled = c.roles[r].teamName && c.roles[r].teamName.trim().length>0;
+      const submitted = c.pendingOrders[r] !== null && c.pendingOrders[r] !== undefined;
+      let stampHtml = '';
+      if (s.status==='playing' && c.status!=='finished'){
+        stampHtml = submitted ? `<span class="stamp ok" style="transform:none; padding:2px 8px; font-size:9px;">in</span>` : `<span class="stamp wait" style="transform:none; padding:2px 8px; font-size:9px;">waiting</span>`;
+      }
+      return `<div class="role-slot ${filled?'filled':''}">
+        <span class="role-tag" style="--role-color:${ROLE_COLOR[r]}"><span class="role-dot"></span>${ROLE_LABEL[r]}</span>
+        <span class="name"><span class="name-text">${filled?esc(c.roles[r].teamName):'unclaimed'}</span>${stampHtml}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+async function handleStartGame(){
+  App.busy=true; render();
+  try{ await OrderRoomData.startGame(App.code); }
+  catch(e){ console.error(e); App.error='Could not start the game. Please try again.'; }
+  App.busy=false; render();
+}
+async function handleEndGame(){
+  App.busy=true; render();
+  try{ await OrderRoomData.endGame(App.code); App.view='instructorResults'; }
+  catch(e){ console.error(e); App.error='Could not end the game. Please try again.'; }
+  App.busy=false; render();
+}
+
+/* ============================== RENDER: INSTRUCTOR RESULTS ============================== */
+function bullwhipRatio(history, role, demand){
+  if (!history || history.length<2) return null;
+  const orders = history.map(h=>h[role].orderPlaced);
+  const stdev = arr => { const m=arr.reduce((a,b)=>a+b,0)/arr.length; return Math.sqrt(arr.reduce((a,b)=>a+(b-m)**2,0)/arr.length); };
+  const demandSlice = demand.slice(0, orders.length);
+  const dStd = stdev(demandSlice) || 0.0001;
+  return (stdev(orders)/dStd).toFixed(2);
+}
+function renderInstructorResults(){
+  const s = App.session; const chains = App.allChains||[];
+  if (!s) return `<div class="center-shell"><p>Loading…</p></div>`;
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room — Results</div></div>
+    <div class="code-pill">${esc(App.code)}</div>
+  </div>
+  <div class="wide-shell">
+    <h2 style="margin-bottom:4px;">Final results</h2>
+    <p style="margin-bottom:22px;">Bullwhip ratio = std. deviation of a role's orders ÷ std. deviation of real customer demand. Above 1.0 means that role amplified the signal it received.</p>
+    <div style="overflow-x:auto; margin-bottom:30px;">
+    <table class="results">
+      <tr><th>Chain</th><th>Rounds played</th><th>Total chain cost</th>${ROLES.map(r=>`<th>${ROLE_LABEL[r]} bullwhip</th>`).join('')}</tr>
+      ${chains.map(c=>{
+        if (!c) return '';
+        const totalCost = ROLES.reduce((a,r)=> a + (c.state[r]?c.state[r].cumulativeCost:0), 0);
+        return `<tr>
+          <td>Chain ${c.chainId}</td>
+          <td class="mono-num">${c.history.length}</td>
+          <td class="mono-num">$${totalCost.toFixed(2)}</td>
+          ${ROLES.map(r=>`<td class="mono-num">${bullwhipRatio(c.history, r, s.demand) ?? '—'}</td>`).join('')}
+        </tr>`;
+      }).join('')}
+    </table>
+    </div>
+    ${chains.map(c=>{
+      if (!c) return '';
+      return `
+      <div class="card" style="margin-bottom:20px;">
+        <h3 style="color:var(--text); margin-bottom:12px;">Chain ${c.chainId} — orders placed each round</h3>
+        ${c.history.length ? `<canvas id="chart-${c.chainId}" height="90"></canvas>` : `<p>No rounds completed yet.</p>`}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+function drawResultsCharts(chains, session){
+  if (!chains || !session || !window.Chart) return;
+  chains.forEach(c=>{
+    if (!c || !c.history.length) return;
+    const el = document.getElementById('chart-'+c.chainId);
+    if (!el) return;
+    if (el._chart) el._chart.destroy();
+    const labels = c.history.map(h=>h.round);
+    const datasets = ROLES.map(r=>({
+      label: ROLE_LABEL[r],
+      data: c.history.map(h=>h[r].orderPlaced),
+      borderColor: ROLE_COLOR[r], backgroundColor: ROLE_COLOR[r],
+      tension:.25, pointRadius:2, borderWidth:2, fill:false
+    }));
+    datasets.push({ label:'Customer demand', data: session.demand.slice(0,labels.length), borderColor:'#8a7f68', borderDash:[4,3], borderWidth:1.5, pointRadius:0, fill:false });
+    el._chart = new Chart(el.getContext('2d'), {
+      type:'line', data:{ labels, datasets },
+      options:{ responsive:true, plugins:{ legend:{ labels:{ color:'#332c1f', font:{family:'Space Mono', size:10} } } },
+        scales:{ x:{ ticks:{color:'#8a7f68'}, grid:{color:'#ecdcae'} }, y:{ ticks:{color:'#8a7f68'}, grid:{color:'#ecdcae'}, beginAtZero:true } } }
+    });
+  });
+}
+
+/* ============================== RENDER: TEAM JOIN ============================== */
+function renderTeamJoin(){
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room</div></div>
+    <button class="link-btn" onclick="App.view='home'; render();">← back</button>
+  </div>
+  <div class="center-shell">
+    <div class="col">
+      <div class="eyebrow">Join a game</div>
+      <h1 style="font-size:26px;">Enter the game code</h1>
+      <p style="margin-bottom:20px;">Your instructor will have this on their screen.</p>
+      <input type="text" id="join-code" maxlength="4" placeholder="e.g. K7WM" style="text-transform:uppercase; letter-spacing:4px; font-family:'Space Mono',monospace; text-align:center; font-size:20px;">
+      ${App.error ? `<div class="err">${esc(App.error)}</div>` : ''}
+      <button class="btn btn-primary btn-block" ${App.busy?'disabled':''} onclick="handleJoinCode()">Continue</button>
+    </div>
+  </div>`;
+}
+async function handleJoinCode(){
+  App.busy=true; App.error=''; render();
+  const code = document.getElementById('join-code').value.trim().toUpperCase();
+  let session = null;
+  try{ session = await OrderRoomData.getSession(code); }
+  catch(e){ console.error(e); }
+  App.busy=false;
+  if (!session){ App.error='No game found with that code. Double check with your instructor.'; render(); return; }
+  App.code = code; App.session = session; App.view='teamSelect';
+  render();
+}
+
+/* ============================== RENDER: TEAM SELECT (chain + role) ============================== */
+function renderTeamSelect(){
+  const chains = App.allChains || [];
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room</div></div>
+    <div class="code-pill">${esc(App.code)}</div>
+  </div>
+  <div class="wide-shell">
+    <h2>Choose your chain and role</h2>
+    <p style="margin-bottom:20px;">Tip: sit near the teams next to you in the same chain — you'll be waiting on each other every round.</p>
+    <div class="grid-chains">
+      ${chains.map(c => { if (!c) return ''; return `
+        <div class="card">
+          <h3 style="color:var(--text); margin-bottom:12px;">Chain ${c.chainId}</h3>
+          <div class="role-pick">
+            ${ROLES.map(r=>{
+              const taken = c.roles[r].teamName && c.roles[r].teamName.trim().length>0;
+              return `<button class="role-btn" style="--role-color:${ROLE_COLOR[r]}" onclick="selectChainRole(${c.chainId}, '${r}')">
+                <div class="rn">${ROLE_LABEL[r]}</div>
+                <div class="rt">${taken ? 'currently: '+esc(c.roles[r].teamName) : 'open'}</div>
+              </button>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+function selectChainRole(chainId, role){
+  App.chainId = chainId; App.role = role; App.view = 'teamNamePrompt';
+  render();
+}
+function renderTeamNamePrompt(){
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room</div></div>
+    <div class="code-pill">${esc(App.code)}</div>
+  </div>
+  <div class="center-shell">
+    <div class="col">
+      <span class="role-tag" style="--role-color:${ROLE_COLOR[App.role]}"><span class="role-dot"></span>${ROLE_LABEL[App.role]} · Chain ${App.chainId}</span>
+      <h1 style="font-size:24px; margin-top:10px;">${ROLE_LABEL[App.role]}</h1>
+      <p style="margin-bottom:18px;">${ROLE_DESC[App.role]}</p>
+      <label>Team name (whatever you'd like to be called)</label>
+      <input type="text" id="team-name" placeholder="e.g. Team Backorder" maxlength="30">
+      ${App.error ? `<div class="err">${esc(App.error)}</div>` : ''}
+      <button class="btn btn-primary btn-block" ${App.busy?'disabled':''} onclick="handleConfirmTeam()">Take this seat</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px;" onclick="App.error=''; App.view='teamSelect'; render();">← choose a different seat</button>
+    </div>
+  </div>`;
+}
+async function handleConfirmTeam(){
+  const name = document.getElementById('team-name').value.trim() || (ROLE_LABEL[App.role]+' team');
+  App.busy=true; App.error=''; render();
+  try{
+    await OrderRoomData.setTeamName(App.code, App.chainId, App.role, name);
+    App.teamName = name;
+    App.view = 'teamRoom';
+  } catch(e){
+    console.error(e);
+    App.error = 'Could not claim this seat. Please try again.';
+  }
+  App.busy=false;
+  render();
+}
+
+/* ============================== RENDER: TEAM ROOM ============================== */
+function recentAvgForRole(chain, role, session){
+  const hist = chain.history;
+  if (!hist.length) return session.initialDemand;
+  const recent = hist.slice(-3).map(h=>h[role].receivedOrder);
+  return recent.reduce((a,b)=>a+b,0)/recent.length;
+}
+function renderTeamRoom(){
+  const s = App.session, c = App.chain, role = App.role;
+  if (!s || !c) return `<div class="center-shell"><p>Loading…</p></div>`;
+
+  if (s.status==='lobby'){
+    return teamShell(`
+      <div class="slip" style="--role-color:${ROLE_COLOR[role]}; text-align:center;">
+        <div class="role-tag" style="justify-content:center;"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId}</div>
+        <h2 style="margin:14px 0 6px;">Waiting for the instructor to start the game…</h2>
+        <p>You're checked in as <strong style="color:var(--text)">${esc(c.roles[role].teamName)}</strong>. Nothing to do yet.</p>
+      </div>`);
+  }
+
+  if (s.status==='ended' || c.status==='finished'){
+    return teamShell(renderTeamFinalSummary(c, s, role));
+  }
+
+  const myState = c.state[role];
+  const iSubmitted = c.pendingOrders[role] !== null && c.pendingOrders[role] !== undefined;
+  const waitingOn = ROLES.filter(r=> c.pendingOrders[r]===null || c.pendingOrders[r]===undefined);
+
+  let body = '';
+  if (iSubmitted){
+    body = `
+      <div class="stamp ok" style="margin-bottom:14px;">Order submitted</div>
+      <h2>Waiting on ${waitingOn.map(r=>ROLE_LABEL[r]).join(', ')}…</h2>
+      <p>Round advances automatically once every role in your chain has ordered.</p>`;
+  } else {
+    const receivedOrderThisRound = role==='retailer' ? s.demand[c.currentRound-1] : myState.orderPipeline[0];
+    body = `
+      <h2>Round ${c.currentRound} of ${s.numRounds}</h2>
+      <div class="stat-grid">
+        <div class="stat"><div class="num">${myState.inventory}</div><div class="lbl">On hand</div></div>
+        <div class="stat"><div class="num" style="color:${myState.backlog>0?'var(--danger)':'var(--text)'}">${myState.backlog}</div><div class="lbl">Backordered</div></div>
+        <div class="stat"><div class="num">${myState.shipPipeline[0]}</div><div class="lbl">Arriving this round</div></div>
+        <div class="stat"><div class="num">${receivedOrderThisRound}</div><div class="lbl">${role==='retailer'?'Customer demand':'Order from downstream'}</div></div>
+      </div>
+      <p style="margin-bottom:16px;">Decide how much to order from your ${ROLE_UPSTREAM_LABEL[role]==='production'?'own production line':ROLE_UPSTREAM_LABEL[role]}. It'll arrive after the shipping delay, same as always.</p>
+      <label>Order quantity</label>
+      <input type="number" id="order-qty" min="0" value="${Math.round(receivedOrderThisRound)}">
+      ${App.error ? `<div class="err">${esc(App.error)}</div>` : ''}
+      <button class="btn btn-primary btn-block" ${App.busy?'disabled':''} onclick="handleSubmitOrder()">Send order</button>`;
+  }
+
+  const historyStrip = c.history.length ? `
+    <div class="divider"></div>
+    <h3 style="margin-bottom:10px;">Your last few rounds</h3>
+    <table class="results">
+      <tr><th>Rnd</th><th>Received</th><th>Shipped out</th><th>Inv.</th><th>Backlog</th><th>Ordered</th></tr>
+      ${c.history.slice(-5).map(h=>`<tr>
+        <td class="mono-num">${h.round}</td>
+        <td class="mono-num">${h[role].receivedShipment}</td>
+        <td class="mono-num">${h[role].shipped}</td>
+        <td class="mono-num">${h[role].inventory}</td>
+        <td class="mono-num">${h[role].backlog}</td>
+        <td class="mono-num">${h[role].orderPlaced}</td>
+      </tr>`).join('')}
+    </table>` : '';
+
+  return teamShell(`
+    <div class="slip" style="--role-color:${ROLE_COLOR[role]}">
+      <div class="role-tag"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId} · ${esc(c.roles[role].teamName)}</div>
+      <div style="margin-top:16px;">${body}</div>
+      ${historyStrip}
+    </div>`);
+}
+function renderTeamFinalSummary(c, s, role){
+  const totalCost = c.state[role] ? c.state[role].cumulativeCost.toFixed(2) : '0.00';
+  return `
+  <div class="slip" style="--role-color:${ROLE_COLOR[role]}; text-align:center;">
+    <div class="role-tag" style="justify-content:center;"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId}</div>
+    <h2 style="margin:14px 0 6px;">Game over</h2>
+    <p>Your total cost for the game: <strong class="mono" style="color:var(--text)">$${totalCost}</strong></p>
+    <p style="margin-top:6px;">Ask your instructor to pull up the full results to see how your chain compares.</p>
+  </div>`;
+}
+function teamShell(inner){
+  return `
+  <div class="topbar">
+    <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room</div></div>
+    <div class="code-pill">${esc(App.code)}</div>
+  </div>
+  <div class="wide-shell" style="max-width:640px;">${inner}</div>`;
+}
+async function handleSubmitOrder(){
+  const val = Math.max(0, Math.round(parseFloat(document.getElementById('order-qty').value) || 0));
+  const c = App.chain, s = App.session, role = App.role;
+  const recentAvg = recentAvgForRole(c, role, s);
+  const unusual = val > Math.max(recentAvg*3, s.initialDemand*4) || (recentAvg>0 && val===0 && recentAvg>3);
+  if (unusual && !App.confirmedUnusual){
+    App.pendingConfirm = val;
+    render();
+    return;
+  }
+  App.confirmedUnusual = false; App.pendingConfirm = null;
+  App.busy = true; App.error=''; render();
+  try{ await OrderRoomData.submitOrder(App.code, App.chainId, role, val, s); }
+  catch(e){ console.error(e); App.error = 'Could not send that order — check your connection and try again.'; }
+  App.busy = false;
+  render();
+}
+function renderConfirmModal(){
+  if (App.pendingConfirm===null || App.pendingConfirm===undefined) return '';
+  return `
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h2 style="color:var(--accent3); margin-bottom:10px;">That order looks unusual</h2>
+      <p style="margin-bottom:18px;">You entered <strong class="mono" style="color:var(--text)">${App.pendingConfirm}</strong>, which is well outside what you've been ordering. Could be a typo — or a deliberate strategy. Your call.</p>
+      <div class="btn-row">
+        <button class="btn" onclick="App.pendingConfirm=null; render();">Let me fix it</button>
+        <button class="btn btn-primary" onclick="confirmUnusualOrder()">Send it anyway</button>
+      </div>
+    </div>
+  </div>`;
+}
+async function confirmUnusualOrder(){
+  App.confirmedUnusual = true;
+  const val = App.pendingConfirm;
+  App.pendingConfirm = null;
+  App.busy = true; App.error=''; render();
+  try{ await OrderRoomData.submitOrder(App.code, App.chainId, App.role, val, App.session); }
+  catch(e){ console.error(e); App.error = 'Could not send that order — check your connection and try again.'; }
+  App.busy = false;
+  render();
+}
+
+/* ============================== CONNECTION STATUS ============================== */
+function renderConnStatus(){
+  if (App.connError){
+    return `<div class="modal-backdrop" style="z-index:60;"><div class="modal" style="border-color:var(--danger);">
+      <h2 style="color:var(--danger); margin-bottom:10px;">Connection problem</h2>
+      <p style="margin-bottom:18px;">${esc(App.connError)}</p>
+      <button class="btn btn-primary btn-block" onclick="location.reload()">Reload</button>
+    </div></div>`;
+  }
+  if (App.offline){
+    return `<div class="offline-pill">Reconnecting…</div>`;
+  }
+  return '';
+}
+
+/* ============================== MASTER RENDER ============================== */
+function render(){
+  updateHash();
+  const app = document.getElementById('app');
+  let html = '';
+  switch(App.view){
+    case 'home': stopListen(); html = renderHome(); break;
+    case 'instructorSetup': stopListen(); html = renderInstructorSetup(); break;
+    case 'instructorDashboard': html = renderInstructorDashboard(); break;
+    case 'instructorResults': html = renderInstructorResults(); break;
+    case 'teamJoin': stopListen(); html = renderTeamJoin(); break;
+    case 'teamSelect': html = renderTeamSelect(); break;
+    case 'teamNamePrompt': stopListen(); html = renderTeamNamePrompt(); break;
+    case 'teamRoom': html = renderTeamRoom(); break;
+    default: html = renderHome();
+  }
+  html += renderConfirmModal();
+  html += renderConnStatus();
+  app.innerHTML = html;
+
+  if (App.view==='instructorDashboard' && !App.unsub) startListen(listenInstructorDashboard);
+  if (App.view==='instructorResults' && !App.unsub) startListen(listenInstructorResults);
+  if (App.view==='teamSelect' && !App.unsub) startListen(listenTeamSelect);
+  if (App.view==='teamRoom' && !App.unsub) startListen(()=>listenTeamRoom());
+}
+
+/* Inline onclick="..." attributes run in global scope, but this whole
+ * script is a module (needed for the Firebase ES module imports), so
+ * nothing here is on `window` by default — expose exactly what the
+ * rendered HTML's onclick handlers reference. */
+Object.assign(window, {
+  App, render,
+  handleCreateSession, handleJoinCode, selectChainRole, handleConfirmTeam,
+  handleStartGame, handleEndGame, handleSubmitOrder, confirmUnusualOrder
+});
+
+/* ============================== INIT ============================== */
+OrderRoomData.ensureAnonymousSession().catch((e)=>console.error('anonymous sign-in failed', e));
+tryRestoreFromHash();
+render();
+</script>
+</body>
+</html>

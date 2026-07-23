@@ -1,0 +1,28 @@
+// The Order Room's Firestore security rules.
+//
+// This app shares the "agribusiness-simulator" Firebase project with the
+// Agribusiness-Sim tool. There is only one firestore.rules per project, and
+// the deployed source of truth for it lives with that project (currently
+// Agribusiness-Sim/web/firestore.rules on this machine). This file is kept
+// here purely as documentation of what The Order Room needs — copy the
+// `orderRoomSessions` block below into the real rules file and redeploy
+// (firebase deploy --only firestore:rules, or paste into the Firebase
+// console's Rules tab) whenever it changes.
+//
+// Deliberately simple: this is a single in-person class period with no
+// accounts, no grades, and nothing that outlives the session, so there's no
+// PIN/ownership model to enforce — any anonymous participant in the room
+// may read/write any session or chain. isSignedIn() just keeps the
+// collection off-limits to anyone not running the app at all.
+
+match /orderRoomSessions/{code} {
+  allow read: if isSignedIn();
+  allow create, update: if isSignedIn();
+  allow delete: if false;
+
+  match /chains/{chainId} {
+    allow read: if isSignedIn();
+    allow create, update: if isSignedIn();
+    allow delete: if false;
+  }
+}
