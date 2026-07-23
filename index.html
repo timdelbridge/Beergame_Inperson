@@ -811,9 +811,23 @@ function renderConnStatus(){
 }
 
 /* ============================== MASTER RENDER ============================== */
+// Live listeners can fire (and trigger a re-render) at any moment — e.g. a
+// chainmate submits their order while this role is mid-keystroke on their
+// own order-qty field. innerHTML-replacing the whole screen would normally
+// blow away focus, cursor position, and whatever they'd typed so far.
+// Preserve/restore state for the one free-text input that's ever live
+// while a listener is active (#order-qty on the team room screen).
+const PRESERVE_FOCUS_IDS = ['order-qty'];
 function render(){
   updateHash();
   const app = document.getElementById('app');
+  const active = document.activeElement;
+  const preserve = (active && PRESERVE_FOCUS_IDS.includes(active.id)) ? {
+    id: active.id, value: active.value,
+    selStart: (typeof active.selectionStart === 'number') ? active.selectionStart : null,
+    selEnd: (typeof active.selectionEnd === 'number') ? active.selectionEnd : null
+  } : null;
+
   let html = '';
   switch(App.view){
     case 'home': stopListen(); html = renderHome(); break;
@@ -829,6 +843,17 @@ function render(){
   html += renderConfirmModal();
   html += renderConnStatus();
   app.innerHTML = html;
+
+  if (preserve){
+    const el = document.getElementById(preserve.id);
+    if (el){
+      el.value = preserve.value;
+      el.focus();
+      if (preserve.selStart !== null && el.setSelectionRange){
+        try{ el.setSelectionRange(preserve.selStart, preserve.selEnd); } catch(e){}
+      }
+    }
+  }
 
   if (App.view==='instructorDashboard' && !App.unsub) startListen(listenInstructorDashboard);
   if (App.view==='instructorResults' && !App.unsub) startListen(listenInstructorResults);
