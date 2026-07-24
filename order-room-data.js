@@ -189,6 +189,12 @@ async function submitOrder(code, chainId, role, value, session) {
     if (!snap.exists()) throw new Error("This chain could not be found.");
     const chain = snap.data();
 
+    // A straggler submit that was in flight exactly as the round finished
+    // (or the instructor ended the game) lands here as a harmless no-op
+    // rather than writing into pendingOrders on a chain nothing will ever
+    // read further.
+    if (chain.status === 'finished') return chain;
+
     // Idempotent guard: if this role already has an order in for the
     // current round (e.g. a retried submit after a flaky connection),
     // don't double-apply it.
