@@ -23,6 +23,15 @@ export const ROLE_UPSTREAM_LABEL = { retailer: 'wholesaler', wholesaler: 'distri
 
 export const ROLE_COLOR = { retailer: '#d99a00', wholesaler: '#1fab6f', distributor: '#3f5fe0', factory: '#e2572f' };
 
+/** Same 4 hues, darkened until each hits at least 4.5:1 contrast against a
+ *  white/cream surface (WCAG AA for normal-size text). ROLE_COLOR itself is
+ *  too light at small text sizes (verified: retailer 2.4:1, wholesaler
+ *  2.9:1, factory 3.7:1 against white — all fail AA, distributor barely
+ *  passes at 5.3:1). Use this wherever a role color is the foreground/text
+ *  color; keep ROLE_COLOR for backgrounds, dots, borders, and chart lines,
+ *  where it's decorative rather than text. */
+export const ROLE_TEXT_COLOR = { retailer: '#7a5a00', wholesaler: '#0f7a4c', distributor: '#3f5fe0', factory: '#b5391a' };
+
 export const downstreamOf = { factory: 'distributor', distributor: 'wholesaler', wholesaler: 'retailer' };
 export const upstreamOf = { retailer: 'wholesaler', wholesaler: 'distributor', distributor: 'factory' };
 

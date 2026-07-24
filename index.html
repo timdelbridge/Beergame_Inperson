@@ -10,11 +10,19 @@
 
   :root{
     --bg:#fbf4e4; --surface:#ffffff; --surface2:#fff2cf; --border:#ecdcae;
-    --text:#332c1f; --muted:#8a7f68;
-    --accent:#ffb703; --accent2:#1fab6f; --accent3:#ff6b4a; --accent4:#4361ee;
+    --text:#332c1f; --muted:#6e6452;
+    --accent:#ffb703; --accent-text:#8a6200; --accent2:#1fab6f; --accent3:#c23f1f; --accent4:#4361ee;
     --retailer:#d99a00; --wholesaler:#1fab6f; --distributor:#3f5fe0; --factory:#e2572f;
-    --danger:#e5484d; --ok:#1fab6f;
+    --danger:#c22d3c; --ok:#0f7a4c;
   }
+  /* --muted, --danger, --accent3, --ok above are darkened from their original
+     brighter values (still used for backgrounds/dots elsewhere via ROLE_COLOR
+     and --accent) specifically so text and small UI labels set in these
+     colors clear WCAG AA contrast (4.5:1 normal text / 3:1 large text)
+     against the light theme's white/cream surfaces. --accent itself stays
+     bright since it's a button/background color with dark text on top;
+     --accent-text is its text-safe counterpart for the couple of spots
+     where the accent color is used as foreground text. */
   *{box-sizing:border-box; margin:0; padding:0;}
   body{
     font-family:'DM Sans',sans-serif; color:var(--text);
@@ -47,7 +55,7 @@
   .brand-name{font-family:'Space Mono',monospace; font-weight:700; font-size:13px; letter-spacing:2px; color:var(--text); text-transform:uppercase;}
   .code-pill{
     font-family:'Space Mono',monospace; font-weight:700; font-size:14px; letter-spacing:3px; padding:6px 14px;
-    background:var(--surface2); border:2px dashed var(--accent); border-radius:20px; color:#a97400;
+    background:var(--surface2); border:2px dashed var(--accent); border-radius:20px; color:var(--accent-text);
   }
 
   /* ── typography ── */
@@ -55,7 +63,7 @@
   h2{font-family:'Space Mono',monospace; font-weight:700; font-size:20px; margin-bottom:6px;}
   h3{font-family:'Space Mono',monospace; font-weight:700; font-size:15px; letter-spacing:1px; text-transform:uppercase; color:var(--muted);}
   p{color:var(--muted); line-height:1.55;}
-  .eyebrow{font-family:'Space Mono',monospace; font-weight:700; font-size:11px; letter-spacing:3px; text-transform:uppercase; color:#a97400; margin-bottom:14px;}
+  .eyebrow{font-family:'Space Mono',monospace; font-weight:700; font-size:11px; letter-spacing:3px; text-transform:uppercase; color:var(--accent-text); margin-bottom:14px;}
 
   .chain-strip{display:flex; align-items:center; flex-wrap:wrap; gap:6px;}
   .chain-node{
@@ -90,7 +98,7 @@
     width:100%; padding:12px 14px; background:var(--surface2); border:2px solid var(--border);
     border-radius:10px; color:var(--text); margin-bottom:16px;
   }
-  input:focus, select:focus{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
+  input:focus, select:focus{outline:2px solid var(--accent-text); outline-offset:1px; border-color:var(--accent-text);}
   .field-row{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
   details{margin-bottom:16px;}
   details summary{cursor:pointer; color:var(--accent4); font-size:13px; font-family:'Space Mono',monospace; letter-spacing:1px; margin-bottom:12px;}
@@ -196,7 +204,7 @@
 <script type="module">
 import { OrderRoomData } from './order-room-data.js';
 import {
-  ROLES, ROLE_LABEL, ROLE_DESC, ROLE_UPSTREAM_LABEL, ROLE_COLOR
+  ROLES, ROLE_LABEL, ROLE_DESC, ROLE_UPSTREAM_LABEL, ROLE_COLOR, ROLE_TEXT_COLOR
 } from './game-engine.js';
 
 /* ============================== APP STATE ============================== */
@@ -340,13 +348,13 @@ function renderHome(){
       <div class="chain-strip">
         <div class="chain-node customer">Customer</div>
         <div class="chain-arrow">→</div>
-        <div class="chain-node" style="--role-color:${ROLE_COLOR.retailer}">Retailer</div>
+        <div class="chain-node" style="--role-color:${ROLE_TEXT_COLOR.retailer}">Retailer</div>
         <div class="chain-arrow">→</div>
-        <div class="chain-node" style="--role-color:${ROLE_COLOR.wholesaler}">Wholesaler</div>
+        <div class="chain-node" style="--role-color:${ROLE_TEXT_COLOR.wholesaler}">Wholesaler</div>
         <div class="chain-arrow">→</div>
-        <div class="chain-node" style="--role-color:${ROLE_COLOR.distributor}">Distributor</div>
+        <div class="chain-node" style="--role-color:${ROLE_TEXT_COLOR.distributor}">Distributor</div>
         <div class="chain-arrow">→</div>
-        <div class="chain-node" style="--role-color:${ROLE_COLOR.factory}">Factory</div>
+        <div class="chain-node" style="--role-color:${ROLE_TEXT_COLOR.factory}">Factory</div>
       </div>
 
       <div class="btn-row" style="flex-direction:column; margin-top:24px;">
@@ -406,7 +414,6 @@ function renderInstructorSetup(){
   </div>`;
 }
 async function handleCreateSession(){
-  App.busy = true; App.error=''; render();
   const num = id => parseFloat(document.getElementById(id).value);
   const cfg = {
     numChains: Math.max(1, Math.round(num('cfg-numChains'))),
@@ -419,6 +426,7 @@ async function handleCreateSession(){
     holdingCost: Math.max(0, num('cfg-holdingCost')),
     backlogCost: Math.max(0, num('cfg-backlogCost'))
   };
+  App.busy = true; App.error=''; render();
   try{
     const session = await OrderRoomData.createSession(cfg);
     App.code = session.code;
@@ -445,7 +453,7 @@ function renderInstructorDashboard(){
   <div class="wide-shell">
     <div class="card" style="margin-bottom:22px; display:flex; flex-wrap:wrap; gap:18px; align-items:center; justify-content:space-between;">
       <div>
-        <h2 style="margin-bottom:4px;">Game code: <span style="color:var(--accent)">${esc(App.code)}</span></h2>
+        <h2 style="margin-bottom:4px;">Game code: <span style="color:var(--accent-text)">${esc(App.code)}</span></h2>
         <p style="margin:0;">${s.numChains} chain${s.numChains>1?'s':''} · ${s.numRounds} rounds · ${esc(s.demandPattern)} demand · status: <strong style="color:var(--text)">${esc(s.status)}</strong></p>
       </div>
       <div class="btn-row">
@@ -459,7 +467,7 @@ function renderInstructorDashboard(){
       ${chains.map(c => renderChainSummaryCard(c, s)).join('')}
     </div>
   </div>
-  <div class="footer-note">Have teams go to this page, choose "I'm on a team," and enter <strong style="color:var(--accent)">${esc(App.code)}</strong>.</div>`;
+  <div class="footer-note">Have teams go to this page, choose "I'm on a team," and enter <strong style="color:var(--accent-text)">${esc(App.code)}</strong>.</div>`;
 }
 function renderChainSummaryCard(c, s){
   if (!c) return '';
@@ -475,10 +483,10 @@ function renderChainSummaryCard(c, s){
       const submitted = c.pendingOrders[r] !== null && c.pendingOrders[r] !== undefined;
       let stampHtml = '';
       if (s.status==='playing' && c.status!=='finished'){
-        stampHtml = submitted ? `<span class="stamp ok" style="transform:none; padding:2px 8px; font-size:9px;">in</span>` : `<span class="stamp wait" style="transform:none; padding:2px 8px; font-size:9px;">waiting</span>`;
+        stampHtml = submitted ? `<span class="stamp ok" style="transform:none; padding:2px 8px; font-size:10px;">in</span>` : `<span class="stamp wait" style="transform:none; padding:2px 8px; font-size:10px;">waiting</span>`;
       }
       return `<div class="role-slot ${filled?'filled':''}">
-        <span class="role-tag" style="--role-color:${ROLE_COLOR[r]}"><span class="role-dot"></span>${ROLE_LABEL[r]}</span>
+        <span class="role-tag" style="--role-color:${ROLE_TEXT_COLOR[r]}"><span class="role-dot"></span>${ROLE_LABEL[r]}</span>
         <span class="name"><span class="name-text">${filled?esc(c.roles[r].teamName):'unclaimed'}</span>${stampHtml}</span>
       </div>`;
     }).join('')}
@@ -584,8 +592,8 @@ function renderTeamJoin(){
   </div>`;
 }
 async function handleJoinCode(){
-  App.busy=true; App.error=''; render();
   const code = document.getElementById('join-code').value.trim().toUpperCase();
+  App.busy=true; App.error=''; render();
   let session = null;
   try{ session = await OrderRoomData.getSession(code); }
   catch(e){ console.error(e); }
@@ -613,7 +621,7 @@ function renderTeamSelect(){
           <div class="role-pick">
             ${ROLES.map(r=>{
               const taken = c.roles[r].teamName && c.roles[r].teamName.trim().length>0;
-              return `<button class="role-btn" style="--role-color:${ROLE_COLOR[r]}" onclick="selectChainRole(${c.chainId}, '${r}')">
+              return `<button class="role-btn" style="--role-color:${ROLE_TEXT_COLOR[r]}" onclick="selectChainRole(${c.chainId}, '${r}')">
                 <div class="rn">${ROLE_LABEL[r]}</div>
                 <div class="rt">${taken ? 'currently: '+esc(c.roles[r].teamName) : 'open'}</div>
               </button>`;
@@ -636,7 +644,7 @@ function renderTeamNamePrompt(){
   </div>
   <div class="center-shell">
     <div class="col">
-      <span class="role-tag" style="--role-color:${ROLE_COLOR[App.role]}"><span class="role-dot"></span>${ROLE_LABEL[App.role]} · Chain ${App.chainId}</span>
+      <span class="role-tag" style="--role-color:${ROLE_TEXT_COLOR[App.role]}"><span class="role-dot"></span>${ROLE_LABEL[App.role]} · Chain ${App.chainId}</span>
       <h1 style="font-size:24px; margin-top:10px;">${ROLE_LABEL[App.role]}</h1>
       <p style="margin-bottom:18px;">${ROLE_DESC[App.role]}</p>
       <label>Team name (whatever you'd like to be called)</label>
@@ -676,7 +684,7 @@ function renderTeamRoom(){
   if (s.status==='lobby'){
     return teamShell(`
       <div class="slip" style="--role-color:${ROLE_COLOR[role]}; text-align:center;">
-        <div class="role-tag" style="justify-content:center;"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId}</div>
+        <div class="role-tag" style="justify-content:center; --role-color:${ROLE_TEXT_COLOR[role]}"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId}</div>
         <h2 style="margin:14px 0 6px;">Waiting for the instructor to start the game…</h2>
         <p>You're checked in as <strong style="color:var(--text)">${esc(c.roles[role].teamName)}</strong>. Nothing to do yet.</p>
       </div>`);
@@ -730,7 +738,7 @@ function renderTeamRoom(){
 
   return teamShell(`
     <div class="slip" style="--role-color:${ROLE_COLOR[role]}">
-      <div class="role-tag"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId} · ${esc(c.roles[role].teamName)}</div>
+      <div class="role-tag" style="--role-color:${ROLE_TEXT_COLOR[role]}"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId} · ${esc(c.roles[role].teamName)}</div>
       <div style="margin-top:16px;">${body}</div>
       ${historyStrip}
     </div>`);
@@ -739,7 +747,7 @@ function renderTeamFinalSummary(c, s, role){
   const totalCost = c.state[role] ? c.state[role].cumulativeCost.toFixed(2) : '0.00';
   return `
   <div class="slip" style="--role-color:${ROLE_COLOR[role]}; text-align:center;">
-    <div class="role-tag" style="justify-content:center;"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId}</div>
+    <div class="role-tag" style="justify-content:center; --role-color:${ROLE_TEXT_COLOR[role]}"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId}</div>
     <h2 style="margin:14px 0 6px;">Game over</h2>
     <p>Your total cost for the game: <strong class="mono" style="color:var(--text)">$${totalCost}</strong></p>
     <p style="margin-top:6px;">Ask your instructor to pull up the full results to see how your chain compares.</p>
