@@ -288,24 +288,38 @@ async function listenInstructorDashboard(){
   return () => unsubs.forEach(u=>u());
 }
 
+// Charts are drawn synchronously, immediately after the render() call that
+// creates their <canvas> elements — deliberately not deferred through
+// requestAnimationFrame. This mattered in practice: a burst of snapshot
+// events (session + chain, each potentially firing twice for a local-then-
+// server-confirmed write) can trigger several render() calls in quick
+// succession, and rAF-batching the draw meant the *last* render's canvas
+// could end up replaced after the one scheduled frame had already fired —
+// leaving a permanently blank chart with no further snapshot event left to
+// re-trigger it, since nothing changes once a game has ended. Drawing
+// inline avoids that race entirely; redundant draws are harmless (each one
+// destroys and recreates its Chart.js instance).
+function drawResultsChartsIfReady(){
+  if (App.view==='instructorResults' && App.allChains){
+    App.allChains.forEach(c => c && drawChainCharts(c, App.session));
+  }
+  if (App.view==='teamRoom' && App.chain && App.session &&
+      (App.session.status==='ended' || App.chain.status==='finished')){
+    drawChainCharts(App.chain, App.session);
+  }
+}
 async function listenInstructorResults(){
   const session = await OrderRoomData.getSession(App.code);
   if (!session){ App.error='Game not found.'; render(); return null; }
   App.session = session;
   const unsubs = [];
   unsubs.push(OrderRoomData.listenToSession(App.code, (s, meta)=>{
-    onLiveUpdate(meta); if (s) App.session = s; render(); scheduleCharts();
+    onLiveUpdate(meta); if (s) App.session = s; render(); drawResultsChartsIfReady();
   }, handleConnError));
   unsubs.push(OrderRoomData.listenToAllChains(App.code, session.numChains, (chains, meta)=>{
-    onLiveUpdate(meta); App.allChains = chains; render(); scheduleCharts();
+    onLiveUpdate(meta); App.allChains = chains; render(); drawResultsChartsIfReady();
   }, handleConnError));
   return () => unsubs.forEach(u=>u());
-}
-let chartsScheduled = false;
-function scheduleCharts(){
-  if (chartsScheduled) return;
-  chartsScheduled = true;
-  requestAnimationFrame(()=>{ chartsScheduled=false; drawResultsCharts(App.allChains, App.session); });
 }
 
 async function listenTeamSelect(){
@@ -322,12 +336,12 @@ function listenTeamRoom(){
   unsubs.push(OrderRoomData.listenToSession(App.code, (s, meta)=>{
     onLiveUpdate(meta);
     if (!s){ App.error='This game session could not be found.'; render(); return; }
-    App.session = s; App.error=''; render();
+    App.session = s; App.error=''; render(); drawResultsChartsIfReady();
   }, handleConnError));
   unsubs.push(OrderRoomData.listenToChain(App.code, App.chainId, (c, meta)=>{
     onLiveUpdate(meta);
     if (!c){ App.error='This chain could not be found.'; render(); return; }
-    App.chain = c; App.error=''; render();
+    App.chain = c; App.error=''; render(); drawResultsChartsIfReady();
   }, handleConnError));
   return () => unsubs.forEach(u=>u());
 }
@@ -544,33 +558,54 @@ function renderInstructorResults(){
       if (!c) return '';
       return `
       <div class="card" style="margin-bottom:20px;">
-        <h3 style="color:var(--text); margin-bottom:12px;">Chain ${c.chainId} — orders placed each round</h3>
-        ${c.history.length ? `<canvas id="chart-${c.chainId}" height="90"></canvas>` : `<p>No rounds completed yet.</p>`}
+        <h3 style="color:var(--text); margin-bottom:12px;">Chain ${c.chainId}</h3>
+        ${renderChainCharts(c)}
       </div>`;
     }).join('')}
   </div>`;
 }
-function drawResultsCharts(chains, session){
-  if (!chains || !session || !window.Chart) return;
-  chains.forEach(c=>{
-    if (!c || !c.history.length) return;
-    const el = document.getElementById('chart-'+c.chainId);
+
+/** Shared between the instructor's results screen (all chains) and a
+ *  team's own post-game view (their one chain) — three small line charts
+ *  per chain (orders, inventory, backorders), one line per role, so the
+ *  bullwhip effect is visible in all three, not just order volume. */
+function renderChainCharts(c){
+  if (!c.history.length) return `<p>No rounds completed yet.</p>`;
+  const metricLabel = (text) => `<div style="font-family:'Space Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px;">${text}</div>`;
+  return `
+    ${metricLabel('Orders placed')}
+    <canvas id="chart-orders-${c.chainId}" height="90"></canvas>
+    <div style="margin-top:22px;">${metricLabel('Inventory on hand')}</div>
+    <canvas id="chart-inventory-${c.chainId}" height="90"></canvas>
+    <div style="margin-top:22px;">${metricLabel('Backorders')}</div>
+    <canvas id="chart-backlog-${c.chainId}" height="90"></canvas>`;
+}
+function chainMetricDatasets(c, metric){
+  return ROLES.map(r=>({
+    label: ROLE_LABEL[r],
+    data: c.history.map(h=>h[r][metric]),
+    borderColor: ROLE_COLOR[r], backgroundColor: ROLE_COLOR[r],
+    tension:.25, pointRadius:2, borderWidth:2, fill:false
+  }));
+}
+function drawChainCharts(c, session){
+  if (!c || !c.history.length || !window.Chart) return;
+  const labels = c.history.map(h=>h.round);
+  const chartOptions = {
+    responsive:true, plugins:{ legend:{ labels:{ color:'#332c1f', font:{family:'Space Mono', size:10} } } },
+    scales:{ x:{ ticks:{color:'#8a7f68'}, grid:{color:'#ecdcae'} }, y:{ ticks:{color:'#8a7f68'}, grid:{color:'#ecdcae'}, beginAtZero:true } }
+  };
+  const draw = (id, datasets) => {
+    const el = document.getElementById(id);
     if (!el) return;
     if (el._chart) el._chart.destroy();
-    const labels = c.history.map(h=>h.round);
-    const datasets = ROLES.map(r=>({
-      label: ROLE_LABEL[r],
-      data: c.history.map(h=>h[r].orderPlaced),
-      borderColor: ROLE_COLOR[r], backgroundColor: ROLE_COLOR[r],
-      tension:.25, pointRadius:2, borderWidth:2, fill:false
-    }));
-    datasets.push({ label:'Customer demand', data: session.demand.slice(0,labels.length), borderColor:'#8a7f68', borderDash:[4,3], borderWidth:1.5, pointRadius:0, fill:false });
-    el._chart = new Chart(el.getContext('2d'), {
-      type:'line', data:{ labels, datasets },
-      options:{ responsive:true, plugins:{ legend:{ labels:{ color:'#332c1f', font:{family:'Space Mono', size:10} } } },
-        scales:{ x:{ ticks:{color:'#8a7f68'}, grid:{color:'#ecdcae'} }, y:{ ticks:{color:'#8a7f68'}, grid:{color:'#ecdcae'}, beginAtZero:true } } }
-    });
-  });
+    el._chart = new Chart(el.getContext('2d'), { type:'line', data:{ labels, datasets }, options: chartOptions });
+  };
+  const orderDatasets = chainMetricDatasets(c, 'orderPlaced');
+  orderDatasets.push({ label:'Customer demand', data: session.demand.slice(0,labels.length), borderColor:'#8a7f68', borderDash:[4,3], borderWidth:1.5, pointRadius:0, fill:false });
+  draw('chart-orders-'+c.chainId, orderDatasets);
+  draw('chart-inventory-'+c.chainId, chainMetricDatasets(c, 'inventory'));
+  draw('chart-backlog-'+c.chainId, chainMetricDatasets(c, 'backlog'));
 }
 
 /* ============================== RENDER: TEAM JOIN ============================== */
@@ -745,12 +780,39 @@ function renderTeamRoom(){
 }
 function renderTeamFinalSummary(c, s, role){
   const totalCost = c.state[role] ? c.state[role].cumulativeCost.toFixed(2) : '0.00';
+  const roundsNote = c.history.length < s.numRounds
+    ? `The instructor ended the game after round ${c.history.length} of ${s.numRounds}.`
+    : `All ${s.numRounds} rounds complete.`;
+  const fullHistory = c.history.length ? `
+    <div style="overflow-x:auto;">
+    <table class="results">
+      <tr><th>Rnd</th><th>Received</th><th>Shipped out</th><th>Inv.</th><th>Backlog</th><th>Ordered</th><th>Cost</th></tr>
+      ${c.history.map(h=>`<tr>
+        <td class="mono-num">${h.round}</td>
+        <td class="mono-num">${h[role].receivedShipment}</td>
+        <td class="mono-num">${h[role].shipped}</td>
+        <td class="mono-num">${h[role].inventory}</td>
+        <td class="mono-num">${h[role].backlog}</td>
+        <td class="mono-num">${h[role].orderPlaced}</td>
+        <td class="mono-num">$${h[role].cost.toFixed(2)}</td>
+      </tr>`).join('')}
+    </table>
+    </div>` : `<p>No rounds were completed before the game ended.</p>`;
   return `
   <div class="slip" style="--role-color:${ROLE_COLOR[role]}; text-align:center;">
     <div class="role-tag" style="justify-content:center; --role-color:${ROLE_TEXT_COLOR[role]}"><span class="role-dot"></span>${ROLE_LABEL[role]} · Chain ${c.chainId}</div>
     <h2 style="margin:14px 0 6px;">Game over</h2>
     <p>Your total cost for the game: <strong class="mono" style="color:var(--text)">$${totalCost}</strong></p>
-    <p style="margin-top:6px;">Ask your instructor to pull up the full results to see how your chain compares.</p>
+    <p style="margin-top:6px;">${roundsNote}</p>
+  </div>
+  <div class="card" style="margin-top:20px; text-align:left;">
+    <h3 style="color:var(--text); margin-bottom:12px;">Your rounds, start to finish</h3>
+    ${fullHistory}
+  </div>
+  <div class="card" style="margin-top:20px; text-align:left;">
+    <h3 style="color:var(--text); margin-bottom:4px;">Your chain's bullwhip effect</h3>
+    <p style="margin-bottom:16px;">All four roles in Chain ${c.chainId}, round by round — this is what amplifies as an order moves upstream from retailer to factory. Ask your instructor to pull up the full class results to compare your chain against the others.</p>
+    ${renderChainCharts(c)}
   </div>`;
 }
 function teamShell(inner){
