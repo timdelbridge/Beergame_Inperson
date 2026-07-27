@@ -1,6 +1,6 @@
 # The Order Room
 
-A live, in-person version of the Beer Distribution Game supply-chain simulation, built for **AEC 411 (Food Systems Supply Chains)**. An instructor runs one game session with several parallel 4-role supply chains (breakout groups); teams join on their own devices, claim a role (Retailer / Wholesaler / Distributor / Factory), and place order decisions each round. A chain's round auto-advances once all four roles have submitted.
+A live, in-person version of the Beer Distribution Game supply-chain simulation, built for **AEC 411 (Food Systems Supply Chains)**. An instructor runs one game session with several parallel 4-role supply chains (breakout groups); teams join on their own devices, claim a role (Retailer / Wholesaler / Distributor / Factory), and place order decisions each round. Once all four roles in a chain have submitted, the instructor reviews the orders on the dashboard and clicks **Advance round** to process them — or **send back** any one role's order (e.g. an obvious typo like `1000000`) to have that team resubmit before the round advances.
 
 Static site, no build step — `index.html` + two small ES modules (`game-engine.js`, `order-room-data.js`) plus Firebase config.
 

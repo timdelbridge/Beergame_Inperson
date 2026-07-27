@@ -84,9 +84,13 @@ async function createSession(cfg) {
   for (let n = 1; n <= cfg.numChains; n++) {
     const chain = {
       chainId: n,
-      roles: { retailer: { teamName: '' }, wholesaler: { teamName: '' }, distributor: { teamName: '' }, factory: { teamName: '' } },
+      roles: {
+        retailer: { teamName: '', claimedBy: null }, wholesaler: { teamName: '', claimedBy: null },
+        distributor: { teamName: '', claimedBy: null }, factory: { teamName: '', claimedBy: null }
+      },
       currentRound: 1,
       pendingOrders: { retailer: null, wholesaler: null, distributor: null, factory: null },
+      kickback: { retailer: null, wholesaler: null, distributor: null, factory: null },
       state: createEngineState(session),
       history: [],
       status: 'lobby'
@@ -157,14 +161,31 @@ async function endGame(code) {
 // ROLE CLAIM (transactional — see file header)
 // ============================================================
 
+/**
+ * Before the instructor starts the game, a role can only be (re-)claimed by
+ * the browser that originally claimed it (matched by anonymous auth uid,
+ * which persists across tab closes/reopens in the same browser) — this
+ * stops one student from grabbing a seat another student already named.
+ * Once the game is playing, that restriction is dropped: a student who
+ * lost their tab and reopens the app from a different device still needs
+ * to be able to walk back into their seat, and there's no ownership model
+ * beyond "whoever's in the room" for this in-person exercise.
+ */
 async function setTeamName(code, chainId, role, name) {
-  await ensureAnonymousSession();
+  const user = await ensureAnonymousSession();
   const ref = chainRef(code, chainId);
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error("This chain could not be found.");
     const chain = snap.data();
-    chain.roles[role] = { teamName: name };
+
+    const existing = chain.roles[role];
+    const existingName = existing && existing.teamName ? existing.teamName.trim() : '';
+    if (chain.status === 'lobby' && existingName && existing.claimedBy && existing.claimedBy !== user.uid) {
+      throw new Error(`This role has already been taken by "${existingName}". Please choose a different seat.`);
+    }
+
+    chain.roles[role] = { teamName: name, claimedBy: user.uid };
     tx.set(ref, chain);
     return chain;
   });
@@ -175,13 +196,12 @@ async function setTeamName(code, chainId, role, name) {
 // ============================================================
 
 /**
- * `session` is passed in (not re-read inside the transaction) because its
- * cost/delay/demand fields are fixed at createSession time and never
- * change afterward — there's no UI path that edits them mid-game. Only
- * `chain`, which every role's order touches, needs transactional
- * read-modify-write safety.
+ * Submitting an order no longer auto-advances the round even once all four
+ * roles are in — the instructor reviews the four submitted values on the
+ * dashboard and explicitly clicks "Advance round" (see `advanceRound`
+ * below). This just records this role's order for the current round.
  */
-async function submitOrder(code, chainId, role, value, session) {
+async function submitOrder(code, chainId, role, value) {
   await ensureAnonymousSession();
   const ref = chainRef(code, chainId);
   return runTransaction(db, async (tx) => {
@@ -189,10 +209,9 @@ async function submitOrder(code, chainId, role, value, session) {
     if (!snap.exists()) throw new Error("This chain could not be found.");
     const chain = snap.data();
 
-    // A straggler submit that was in flight exactly as the round finished
-    // (or the instructor ended the game) lands here as a harmless no-op
-    // rather than writing into pendingOrders on a chain nothing will ever
-    // read further.
+    // A straggler submit that was in flight exactly as the instructor ended
+    // the game lands here as a harmless no-op rather than writing into
+    // pendingOrders on a chain nothing will ever read further.
     if (chain.status === 'finished') return chain;
 
     // Idempotent guard: if this role already has an order in for the
@@ -203,16 +222,65 @@ async function submitOrder(code, chainId, role, value, session) {
     }
 
     chain.pendingOrders[role] = value;
-    const allIn = ROLES.every((r) => chain.pendingOrders[r] !== null && chain.pendingOrders[r] !== undefined);
+    if (!chain.kickback) chain.kickback = { retailer: null, wholesaler: null, distributor: null, factory: null };
+    chain.kickback[role] = null;
 
-    if (allIn) {
-      const demandThisRound = session.demand[chain.currentRound - 1];
-      const results = processRound(chain.state, chain.pendingOrders, demandThisRound, session);
-      chain.history.push(Object.assign({ round: chain.currentRound }, results));
-      chain.currentRound += 1;
-      chain.pendingOrders = { retailer: null, wholesaler: null, distributor: null, factory: null };
-      if (chain.currentRound > session.numRounds) chain.status = 'finished';
-    }
+    tx.set(ref, chain);
+    return chain;
+  });
+}
+
+/**
+ * Instructor-triggered: processes the round once all four roles have
+ * submitted. `session` is passed in (not re-read inside the transaction)
+ * because its cost/delay/demand fields are fixed at createSession time and
+ * never change afterward. Only `chain` needs transactional read-modify-write
+ * safety here.
+ */
+async function advanceRound(code, chainId, session) {
+  await ensureAnonymousSession();
+  const ref = chainRef(code, chainId);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("This chain could not be found.");
+    const chain = snap.data();
+    if (chain.status === 'finished') return chain;
+
+    const allIn = ROLES.every((r) => chain.pendingOrders[r] !== null && chain.pendingOrders[r] !== undefined);
+    if (!allIn) throw new Error("Not all roles have submitted an order yet.");
+
+    const demandThisRound = session.demand[chain.currentRound - 1];
+    const results = processRound(chain.state, chain.pendingOrders, demandThisRound, session);
+    chain.history.push(Object.assign({ round: chain.currentRound }, results));
+    chain.currentRound += 1;
+    chain.pendingOrders = { retailer: null, wholesaler: null, distributor: null, factory: null };
+    chain.kickback = { retailer: null, wholesaler: null, distributor: null, factory: null };
+    if (chain.currentRound > session.numRounds) chain.status = 'finished';
+
+    tx.set(ref, chain);
+    return chain;
+  });
+}
+
+/**
+ * Instructor-triggered: clears a role's submitted order for the current
+ * round and flags it so that role's team sees a "please resubmit" notice —
+ * for catching an obviously broken entry (a stray extra zero, etc.) before
+ * it gets baked into the round.
+ */
+async function kickBackOrder(code, chainId, role) {
+  await ensureAnonymousSession();
+  const ref = chainRef(code, chainId);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("This chain could not be found.");
+    const chain = snap.data();
+    if (chain.status === 'finished') return chain;
+    if (chain.pendingOrders[role] === null || chain.pendingOrders[role] === undefined) return chain;
+
+    chain.pendingOrders[role] = null;
+    if (!chain.kickback) chain.kickback = { retailer: null, wholesaler: null, distributor: null, factory: null };
+    chain.kickback[role] = "Your last order was sent back by the instructor for review — please resubmit.";
 
     tx.set(ref, chain);
     return chain;
@@ -225,5 +293,5 @@ export const OrderRoomData = {
   createSession, getSession, listenToSession,
   listenToChain, listenToAllChains,
   startGame, endGame,
-  setTeamName, submitOrder,
+  setTeamName, submitOrder, advanceRound, kickBackOrder,
 };

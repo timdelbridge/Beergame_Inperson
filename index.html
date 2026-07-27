@@ -205,8 +205,21 @@
 <script type="module">
 import { OrderRoomData } from './order-room-data.js';
 import {
-  ROLES, ROLE_LABEL, ROLE_DESC, ROLE_UPSTREAM_LABEL, ROLE_COLOR, ROLE_TEXT_COLOR
+  ROLES, ROLE_LABEL, ROLE_DESC, ROLE_UPSTREAM_LABEL, ROLE_COLOR, ROLE_TEXT_COLOR, downstreamOf
 } from './game-engine.js';
+
+/** Display label for who a role's *incoming shipment* comes from (their
+ *  upstream supplier, or "Production" for the factory). */
+function upstreamLabelFor(role){
+  const u = ROLE_UPSTREAM_LABEL[role];
+  return u === 'production' ? 'Production' : ROLE_LABEL[u];
+}
+/** Display label for who a role's *incoming order* comes from — the role
+ *  immediately downstream, or "Customer" for the retailer. Same role that
+ *  their outgoing shipment goes to. */
+function downstreamLabelFor(role){
+  return role === 'retailer' ? 'Customer' : ROLE_LABEL[downstreamOf[role]];
+}
 
 /* ============================== APP STATE ============================== */
 const App = {
@@ -455,11 +468,52 @@ async function handleCreateSession(){
   render();
 }
 
+/* ============================== CSV EXPORT ============================== */
+function csvField(v){
+  const s = String(v==null?'':v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+/** One row per chain/round/role — the long format makes it trivial to pivot
+ *  or filter in a spreadsheet afterward. */
+function buildResultsCSV(session, chains){
+  const header = ['gameCode','chainId','round','role','teamName','customerDemand','receivedShipment','receivedOrder','shipped','orderPlaced','inventory','backlog','cost','cumulativeCost'];
+  const rows = [header];
+  (chains||[]).forEach(c=>{
+    if (!c) return;
+    c.history.forEach(h=>{
+      ROLES.forEach(r=>{
+        rows.push([
+          App.code, c.chainId, h.round, r, c.roles[r].teamName || '',
+          session.demand[h.round-1],
+          h[r].receivedShipment, h[r].receivedOrder, h[r].shipped, h[r].orderPlaced,
+          h[r].inventory, h[r].backlog, h[r].cost.toFixed(2), h[r].cumulativeCost.toFixed(2)
+        ]);
+      });
+    });
+  });
+  return rows.map(row => row.map(csvField).join(',')).join('\r\n');
+}
+function handleDownloadCSV(){
+  const s = App.session, chains = App.allChains;
+  if (!s || !chains) return;
+  const csv = buildResultsCSV(s, chains);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `order-room-${App.code}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /* ============================== RENDER: INSTRUCTOR DASHBOARD ============================== */
 function renderInstructorDashboard(){
   const s = App.session;
   if (!s) return `<div class="center-shell"><p>Loading…</p></div>`;
   const chains = App.allChains || [];
+  const hasRounds = chains.some(c => c && c.history.length);
   return `
   <div class="topbar">
     <div class="brand"><div class="mark">○</div><div class="brand-name">The Order Room — Instructor</div></div>
@@ -472,6 +526,7 @@ function renderInstructorDashboard(){
         <p style="margin:0;">${s.numChains} chain${s.numChains>1?'s':''} · ${s.numRounds} rounds · ${esc(s.demandPattern)} demand · status: <strong style="color:var(--text)">${esc(s.status)}</strong></p>
       </div>
       <div class="btn-row">
+        ${hasRounds ? `<button class="btn" onclick="handleDownloadCSV()">Download CSV</button>` : ''}
         ${s.status==='lobby' ? `<button class="btn btn-primary" ${App.busy?'disabled':''} onclick="handleStartGame()">Start game for everyone</button>` : ''}
         ${s.status==='playing' ? `<button class="btn btn-danger" ${App.busy?'disabled':''} onclick="handleEndGame()">End game &amp; show results</button>` : ''}
         ${s.status==='ended' ? `<button class="btn btn-primary" onclick="App.view='instructorResults'; render();">View results</button>` : ''}
@@ -482,11 +537,13 @@ function renderInstructorDashboard(){
       ${chains.map(c => renderChainSummaryCard(c, s)).join('')}
     </div>
   </div>
-  <div class="footer-note">Have teams go to this page, choose "I'm on a team," and enter <strong style="color:var(--accent-text)">${esc(App.code)}</strong>.</div>`;
+  <div class="footer-note">Have teams go to this page, choose "I'm on a team," and enter <strong style="color:var(--accent-text)">${esc(App.code)}</strong>.<br>Grab a <strong style="color:var(--accent-text)">Download CSV</strong> snapshot any time rounds have been played — it's your safety net if the session closes before you reach the results screen.</div>`;
 }
 function renderChainSummaryCard(c, s){
   if (!c) return '';
   const roundLabel = c.status==='finished' ? 'Finished' : `Round ${c.currentRound} / ${s.numRounds}`;
+  const live = s.status==='playing' && c.status!=='finished';
+  const allIn = live && ROLES.every(r=> c.pendingOrders[r]!==null && c.pendingOrders[r]!==undefined);
   return `
   <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -495,17 +552,38 @@ function renderChainSummaryCard(c, s){
     </div>
     ${ROLES.map(r=>{
       const filled = c.roles[r].teamName && c.roles[r].teamName.trim().length>0;
-      const submitted = c.pendingOrders[r] !== null && c.pendingOrders[r] !== undefined;
+      const order = c.pendingOrders[r];
+      const submitted = order !== null && order !== undefined;
+      const kicked = c.kickback && c.kickback[r];
       let stampHtml = '';
-      if (s.status==='playing' && c.status!=='finished'){
-        stampHtml = submitted ? `<span class="stamp ok" style="transform:none; padding:2px 8px; font-size:10px;">in</span>` : `<span class="stamp wait" style="transform:none; padding:2px 8px; font-size:10px;">waiting</span>`;
+      if (live){
+        if (submitted){
+          stampHtml = `<span class="mono" style="font-weight:700;">${order}</span> <button class="link-btn" ${App.busy?'disabled':''} style="font-size:11px;" onclick="handleKickBack(${c.chainId},'${r}')">send back</button>`;
+        } else if (kicked){
+          stampHtml = `<span class="stamp warn" style="transform:none; padding:2px 8px; font-size:10px;">sent back</span>`;
+        } else {
+          stampHtml = `<span class="stamp wait" style="transform:none; padding:2px 8px; font-size:10px;">waiting</span>`;
+        }
       }
       return `<div class="role-slot ${filled?'filled':''}">
         <span class="role-tag" style="--role-color:${ROLE_TEXT_COLOR[r]}"><span class="role-dot"></span>${ROLE_LABEL[r]}</span>
         <span class="name"><span class="name-text">${filled?esc(c.roles[r].teamName):'unclaimed'}</span>${stampHtml}</span>
       </div>`;
     }).join('')}
+    ${live ? `<button class="btn btn-primary btn-block" style="margin-top:6px;" ${allIn && !App.busy?'':'disabled'} onclick="handleAdvanceRound(${c.chainId})">${allIn?'Advance round':'Waiting on orders…'}</button>` : ''}
   </div>`;
+}
+async function handleAdvanceRound(chainId){
+  App.busy=true; render();
+  try{ await OrderRoomData.advanceRound(App.code, chainId, App.session); }
+  catch(e){ console.error(e); App.error='Could not advance the round. Please try again.'; }
+  App.busy=false; render();
+}
+async function handleKickBack(chainId, role){
+  App.busy=true; render();
+  try{ await OrderRoomData.kickBackOrder(App.code, chainId, role); }
+  catch(e){ console.error(e); App.error='Could not send that order back. Please try again.'; }
+  App.busy=false; render();
 }
 async function handleStartGame(){
   App.busy=true; render();
@@ -538,7 +616,10 @@ function renderInstructorResults(){
     <div class="code-pill">${esc(App.code)}</div>
   </div>
   <div class="wide-shell">
-    <h2 style="margin-bottom:4px;">Final results</h2>
+    <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start; justify-content:space-between;">
+      <h2 style="margin-bottom:4px;">Final results</h2>
+      <button class="btn" onclick="handleDownloadCSV()">Download CSV</button>
+    </div>
     <p style="margin-bottom:22px;">Bullwhip ratio = std. deviation of a role's orders ÷ std. deviation of real customer demand. Above 1.0 means that role amplified the signal it received.</p>
     <div style="overflow-x:auto; margin-bottom:30px;">
     <table class="results">
@@ -700,7 +781,10 @@ async function handleConfirmTeam(){
     App.view = 'teamRoom';
   } catch(e){
     console.error(e);
-    App.error = 'Could not claim this seat. Please try again.';
+    // A thrown "role already taken" Error has no Firestore .code — anything
+    // with a .code is a transport/permission error, which gets a generic
+    // message instead of leaking SDK internals to the student.
+    App.error = (e && e.message && !e.code) ? e.message : 'Could not claim this seat. Please try again.';
   }
   App.busy=false;
   render();
@@ -733,24 +817,29 @@ function renderTeamRoom(){
   const myState = c.state[role];
   const iSubmitted = c.pendingOrders[role] !== null && c.pendingOrders[role] !== undefined;
   const waitingOn = ROLES.filter(r=> c.pendingOrders[r]===null || c.pendingOrders[r]===undefined);
+  const myKickback = !iSubmitted && c.kickback && c.kickback[role];
+  const upstreamLbl = upstreamLabelFor(role);
+  const downstreamLbl = downstreamLabelFor(role);
 
   let body = '';
   if (iSubmitted){
+    const allIn = waitingOn.length===0;
     body = `
       <div class="stamp ok" style="margin-bottom:14px;">Order submitted</div>
-      <h2>Waiting on ${waitingOn.map(r=>ROLE_LABEL[r]).join(', ')}…</h2>
-      <p>Round advances automatically once every role in your chain has ordered.</p>`;
+      <h2>${allIn ? 'All orders are in' : 'Waiting on '+waitingOn.map(r=>ROLE_LABEL[r]).join(', ')+'…'}</h2>
+      <p>${allIn ? 'Everyone in your chain has submitted. The instructor will review and advance the round shortly.' : 'Once everyone has submitted, the instructor reviews the orders and advances the round.'}</p>`;
   } else {
     const receivedOrderThisRound = role==='retailer' ? s.demand[c.currentRound-1] : myState.orderPipeline[0];
     body = `
+      ${myKickback ? `<div class="err" style="margin-bottom:14px;">${esc(myKickback)}</div>` : ''}
       <h2>Round ${c.currentRound} of ${s.numRounds}</h2>
       <div class="stat-grid">
         <div class="stat"><div class="num">${myState.inventory}</div><div class="lbl">On hand</div></div>
         <div class="stat"><div class="num" style="color:${myState.backlog>0?'var(--danger)':'var(--text)'}">${myState.backlog}</div><div class="lbl">Backordered</div></div>
-        <div class="stat"><div class="num">${myState.shipPipeline[0]}</div><div class="lbl">Arriving this round</div></div>
-        <div class="stat"><div class="num">${receivedOrderThisRound}</div><div class="lbl">${role==='retailer'?'Customer demand':'Order from downstream'}</div></div>
+        <div class="stat"><div class="num">${myState.shipPipeline[0]}</div><div class="lbl">Arriving from ${upstreamLbl}</div></div>
+        <div class="stat"><div class="num">${receivedOrderThisRound}</div><div class="lbl">${role==='retailer'?'Customer demand':'Order from '+downstreamLbl}</div></div>
       </div>
-      <p style="margin-bottom:16px;">Decide how much to order from your ${ROLE_UPSTREAM_LABEL[role]==='production'?'own production line':ROLE_UPSTREAM_LABEL[role]}. It'll arrive after the shipping delay, same as always.</p>
+      <p style="margin-bottom:16px;">Decide how much to order from your ${ROLE_UPSTREAM_LABEL[role]==='production'?'own production line':upstreamLbl}. It'll arrive after the shipping delay. Whatever you ship this round goes to ${downstreamLbl}.</p>
       <label>Order quantity</label>
       <input type="number" id="order-qty" min="0" value="${Math.round(receivedOrderThisRound)}">
       ${App.error ? `<div class="err">${esc(App.error)}</div>` : ''}
@@ -759,9 +848,14 @@ function renderTeamRoom(){
 
   const historyStrip = c.history.length ? `
     <div class="divider"></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:18px;">
+      <div class="stat"><div class="num">$${myState.cumulativeCost.toFixed(2)}</div><div class="lbl">Total cost so far</div></div>
+      <div class="stat"><div class="num">$${c.history[c.history.length-1][role].cost.toFixed(2)}</div><div class="lbl">Cost last round</div></div>
+    </div>
     <h3 style="margin-bottom:10px;">Your last few rounds</h3>
+    <div style="overflow-x:auto;">
     <table class="results">
-      <tr><th>Rnd</th><th>Received</th><th>Shipped out</th><th>Inv.</th><th>Backlog</th><th>Ordered</th></tr>
+      <tr><th>Rnd</th><th>Received from ${upstreamLbl}</th><th>Shipped to ${downstreamLbl}</th><th>Inv.</th><th>Backlog</th><th>Ordered</th><th>Cost</th><th>Total</th></tr>
       ${c.history.slice(-5).map(h=>`<tr>
         <td class="mono-num">${h.round}</td>
         <td class="mono-num">${h[role].receivedShipment}</td>
@@ -769,8 +863,11 @@ function renderTeamRoom(){
         <td class="mono-num">${h[role].inventory}</td>
         <td class="mono-num">${h[role].backlog}</td>
         <td class="mono-num">${h[role].orderPlaced}</td>
+        <td class="mono-num">$${h[role].cost.toFixed(2)}</td>
+        <td class="mono-num">$${h[role].cumulativeCost.toFixed(2)}</td>
       </tr>`).join('')}
-    </table>` : '';
+    </table>
+    </div>` : '';
 
   return teamShell(`
     <div class="slip" style="--role-color:${ROLE_COLOR[role]}">
@@ -784,10 +881,12 @@ function renderTeamFinalSummary(c, s, role){
   const roundsNote = c.history.length < s.numRounds
     ? `The instructor ended the game after round ${c.history.length} of ${s.numRounds}.`
     : `All ${s.numRounds} rounds complete.`;
+  const upstreamLbl = upstreamLabelFor(role);
+  const downstreamLbl = downstreamLabelFor(role);
   const fullHistory = c.history.length ? `
     <div style="overflow-x:auto;">
     <table class="results">
-      <tr><th>Rnd</th><th>Received</th><th>Shipped out</th><th>Inv.</th><th>Backlog</th><th>Ordered</th><th>Cost</th></tr>
+      <tr><th>Rnd</th><th>Received from ${upstreamLbl}</th><th>Shipped to ${downstreamLbl}</th><th>Inv.</th><th>Backlog</th><th>Ordered</th><th>Cost</th><th>Total</th></tr>
       ${c.history.map(h=>`<tr>
         <td class="mono-num">${h.round}</td>
         <td class="mono-num">${h[role].receivedShipment}</td>
@@ -796,6 +895,7 @@ function renderTeamFinalSummary(c, s, role){
         <td class="mono-num">${h[role].backlog}</td>
         <td class="mono-num">${h[role].orderPlaced}</td>
         <td class="mono-num">$${h[role].cost.toFixed(2)}</td>
+        <td class="mono-num">$${h[role].cumulativeCost.toFixed(2)}</td>
       </tr>`).join('')}
     </table>
     </div>` : `<p>No rounds were completed before the game ended.</p>`;
@@ -836,7 +936,7 @@ async function handleSubmitOrder(){
   }
   App.confirmedUnusual = false; App.pendingConfirm = null;
   App.busy = true; App.error=''; render();
-  try{ await OrderRoomData.submitOrder(App.code, App.chainId, role, val, s); }
+  try{ await OrderRoomData.submitOrder(App.code, App.chainId, role, val); }
   catch(e){ console.error(e); App.error = 'Could not send that order — check your connection and try again.'; }
   App.busy = false;
   render();
@@ -860,7 +960,7 @@ async function confirmUnusualOrder(){
   const val = App.pendingConfirm;
   App.pendingConfirm = null;
   App.busy = true; App.error=''; render();
-  try{ await OrderRoomData.submitOrder(App.code, App.chainId, App.role, val, App.session); }
+  try{ await OrderRoomData.submitOrder(App.code, App.chainId, App.role, val); }
   catch(e){ console.error(e); App.error = 'Could not send that order — check your connection and try again.'; }
   App.busy = false;
   render();
@@ -939,7 +1039,8 @@ function render(){
 Object.assign(window, {
   App, render,
   handleCreateSession, handleJoinCode, selectChainRole, handleConfirmTeam,
-  handleStartGame, handleEndGame, handleSubmitOrder, confirmUnusualOrder
+  handleStartGame, handleEndGame, handleSubmitOrder, confirmUnusualOrder,
+  handleAdvanceRound, handleKickBack, handleDownloadCSV
 });
 
 /* ============================== INIT ============================== */
