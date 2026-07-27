@@ -38,17 +38,7 @@
 
   /* ── layout shells ── */
   .center-shell{flex:1; display:flex; align-items:center; justify-content:center; padding:32px 18px;}
-  .hero-shell{ position:relative; overflow:hidden; }
-  .hero-shell::after{
-    content:""; position:absolute; top:0; right:0; bottom:0; width:46%;
-    background-image:url('./tim-delbridge.jpg');
-    background-repeat:no-repeat; background-position:center; background-size:cover;
-    -webkit-mask-image: radial-gradient(ellipse 65% 60% at 62% 50%, black 35%, transparent 72%);
-    mask-image: radial-gradient(ellipse 65% 60% at 62% 50%, black 35%, transparent 72%);
-    pointer-events:none; z-index:0;
-  }
-  .hero-shell > *{ position:relative; z-index:1; }
-  @media (max-width:900px){ .hero-shell::after{ display:none; } }
+  
   .wide-shell{flex:1; padding:24px 18px 60px; max-width:1180px; margin:0 auto; width:100%;}
   .col{max-width:480px; width:100%;}
 
